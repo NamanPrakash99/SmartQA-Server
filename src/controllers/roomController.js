@@ -43,19 +43,28 @@ const roomController = {
     // POST /room/:code/question
     createQuestion: async (request, response) => {
         try {
-            const { content, createdBy } = request.body;
+            const { content, createdBy, user } = request.body;
             const { code } = request.params;
+
+            // Use user field if available, otherwise use createdBy
+            const userName = user || createdBy || "Anonymous";
 
             const question = await Questions.create({
                 roomCode: code,
                 content: content,
-                createdBy: createdBy
+                createdBy: userName
             });
 
-            const io = request.app.get("io");
-            io.to(code).emit("new-question", question);
+            // Add user field to the response for client-side consistency
+            const questionWithUser = {
+                ...question.toObject(),
+                user: userName
+            };
 
-            response.json(question);
+            const io = request.app.get("io");
+            io.to(code).emit("new-question", questionWithUser);
+
+            response.json(questionWithUser);
         } catch (error) {
             console.log(error);
             response.status(500).json({ message: 'Internal server error' });
@@ -70,7 +79,13 @@ const roomController = {
             const questions = await Questions.find({ roomCode: code })
                 .sort({ createdAt: -1 });
 
-            response.json(questions);
+            // Add user field to each question for client-side consistency
+            const questionsWithUser = questions.map(question => ({
+                ...question.toObject(),
+                user: question.createdBy
+            }));
+
+            response.json(questionsWithUser);
         } catch (error) {
             console.log(error);
             response.status(500).json({ message: 'Internal server error' });
@@ -86,6 +101,24 @@ const roomController = {
 
             const topQuestions = await callGemini(questions);
             response.json(topQuestions);
+        } catch (error) {
+            console.log(error);
+            response.status(500).json({ message: 'Internal server error' });
+        }
+    },
+
+    // DELETE /room/:code/question/:questionId
+    deleteQuestion: async (request, response) => {
+        try {
+            const { code, questionId } = request.params;
+            const question = await Questions.findByIdAndDelete(questionId);
+            if (!question) {
+                return response.status(404).json({ message: 'Question not found' });
+            }
+            // Emit question deleted event
+            const io = request.app.get("io");
+            io.to(code).emit("question-deleted", questionId);
+            response.json({ message: 'Question deleted successfully' });
         } catch (error) {
             console.log(error);
             response.status(500).json({ message: 'Internal server error' });

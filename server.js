@@ -5,6 +5,9 @@ const http  = require('http');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const roomRoutes = require('./src/routes/roomRoutes');
+const authRoutes = require('./src/routes/authRoutes');
+const session = require('express-session');
+const passport = require('passport');
 
 const app = express(); // Create instance of express to setup the server
 
@@ -45,7 +48,17 @@ io.on("connection", (socket) => {
 
 app.set("io", io);
 
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'changeme',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false } // Set to true if using HTTPS
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
 app.use('/room', roomRoutes);
+app.use('/auth', authRoutes);
 
 // Start the server
 const PORT = process.env.PORT;
